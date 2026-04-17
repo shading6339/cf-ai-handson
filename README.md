@@ -1,126 +1,121 @@
 # Cloudflare Workers AI ハンズオン
 
-> Cloudflareアカウント1つで、Meta・Google・IBM・Anthropicなど複数社のAIモデルを  
-> **同じコードで・別々の契約なしに・1日10,000 Neurons無料で**試せる環境を作ります。
+> Cloudflareアカウント1つで、Cloudflare提供の hosted model と、一部の外部AIプロバイダのモデルを試せる環境を作ります。
+> ただし、1日10,000 Neurons の無料枠は Workers AI の `@cf/...` モデル向けであり、Anthropic や OpenAI などの外部モデルは AI Gateway / Unified Billing 側の扱いになります。
 
 ---
 
-## ⚡ Workers AI とは？
+## Workers AI とは？
 
-通常、AIモデルを使うには各社との個別契約が必要です。
+Workers AI は、Cloudflare 上で AI モデルを推論できる仕組みです。
 
+Cloudflare の `@cf/...` モデルは Workers AI の料金体系で利用できます。
+一方、Anthropic・OpenAI・Google などの外部モデルは、Cloudflare の unified AI model catalog や AI Gateway Unified Billing を通じて扱えます。
+
+```ts
+// Cloudflare hosted model
+await env.AI.run('@cf/meta/llama-3.1-8b-instruct-fp8-fast', {
+  messages: [...]
+})
+
+// 外部モデルは Unified Billing 側の設定が必要な場合がある
+await env.AI.run(
+  'openai/gpt-4.1-mini',
+  { messages: [...] },
+  { gateway: { id: 'my-gateway' } }
+)
 ```
-😵 普通のやり方
-  Llamaを使いたい  → 自前でGPUサーバーを用意
-  Claudeを使いたい → Anthropicと契約
-  Whisperを使いたい → OpenAIと契約
-  画像生成したい   → Black Forest Labsと契約
-  …契約が増え続ける
 
-😊 Workers AIのやり方
-  全部 → Cloudflareアカウント1つでOK ✅
-```
-
-しかも**書き方は全部同じ**：
-
-```typescript
-// テキスト生成（Meta）
-await env.AI.run('@cf/meta/llama-3.1-8b-instruct-fp8-fast', { messages: [...] })
-
-// テキスト生成（IBM）
-await env.AI.run('@cf/ibm-granite/granite-4.0-h-micro', { messages: [...] })
-
-// 画像生成
-await env.AI.run('@cf/black-forest-labs/flux-1-schnell', { prompt: '...' })
-
-// 音声認識
-await env.AI.run('@cf/openai/whisper', { audio: [...] })
-
-// 全部 env.AI.run() だけ！
-```
+重要
+`@cf/...` モデルと、Anthropic / OpenAI / Google などの外部モデルは、
+同じ Cloudflare アカウントから扱えても、課金の仕組みは同一ではありません。
 
 ---
 
-## 💰 料金のしくみ
+## 料金のしくみ
 
-Workers AIは **「Neurons（ニューロン）」** という単位で課金されます。  
-GPUの計算量に応じて消費する独自単位で、**1日10,000 Neuronsまで無料**です。
+Workers AI は Neurons という単位で課金されます。
+Workers AI の hosted model については、1日 10,000 Neurons まで無料です。
 
 | プラン | 無料枠 | 超過分 |
-|---|---|---|
-| Workers Free（無料） | 10,000 Neurons/日 | 超過するとエラーになる |
-| Workers Paid（$5/月〜） | 10,000 Neurons/日 | $0.011 / 1,000 Neurons |
+|---|---:|---:|
+| Workers Free | 10,000 Neurons/日 | 超過するとエラー |
+| Workers Paid | 10,000 Neurons/日 | $0.011 / 1,000 Neurons |
 
-### モデルごとの価格感
+### 重要な注意
 
-| モデル | 入力 | 出力 | 特徴 |
-|---|---|---|---|
-| Llama 3.1 8B fp8-fast | $0.045/MTok | $0.384/MTok | バランス良し・おすすめ |
-| Llama 3.2 3B | $0.051/MTok | $0.335/MTok | 軽量・高速 |
-| Granite 4.0 micro | $0.017/MTok | $0.112/MTok | **最安**・試しやすい |
-| Whisper（音声認識） | $0.0005/分 | — | OpenAI直接の**1/12**の価格 |
-| Claude Opus 4.7 | 非公開（※） | 非公開（※） | 現在ベータ期間 |
+この無料枠は、Workers AI の `@cf/...` モデルを使う場合の説明です。
 
-> ※ CloudflareダッシュボードにClaudeの料金は記載がありません。  
-> 現在はベータ期間中で無料 or 低コストの可能性がありますが、  
-> 正式版移行時に課金が始まる場合があります。
-
-### 対 Anthropic 直接契約との比較
-
-| モデル | Anthropic直接 | Workers AI経由 |
-|---|---|---|
-| Claude Haiku 4.5 | $1.00 / $5.00 /MTok | 非公開 |
-| Claude Sonnet 4.6 | $3.00 / $15.00 /MTok | 非公開 |
-| Claude Opus 4.7 | $5.00 / $25.00 /MTok | 非公開 |
-| Llama 3.1 8B | — | $0.045 / $0.384 /MTok |
-
-**Workers AIの本領はLlamaなどOSSモデルの圧倒的な安さにあります。**  
-Claudeを本番で使いたい場合はAnthropicと直接契約する方が透明性が高いです。
+Anthropic・OpenAI・Google などの外部モデルは、AI Gateway Unified Billing 側で扱われるため、
+`@cf/...` モデルと同じ 10,000 Neurons無料枠 とは考えない方が安全です。
 
 ---
 
-## 🚨 重要：このハンズオンは「ローカルビルドのみ」で進めます
+## モデルごとの価格感
 
-### ⛔ デプロイしてはいけない理由
+以下は Workers AI hosted model (`@cf/...`) の例です。
 
-```
-wrangler dev   ✅ OK（ローカル動作確認）
-wrangler deploy ❌ NG（このハンズオンでは禁止）
-```
+| モデル | 入力 | 出力 | 備考 |
+|---|---:|---:|---|
+| `@cf/meta/llama-3.1-8b-instruct-fp8-fast` | $0.045 / M input tokens | $0.384 / M output tokens | バランス型 |
+| `@cf/meta/llama-3.2-3b-instruct` | $0.051 / M input tokens | $0.335 / M output tokens | 軽量 |
+| `@cf/ibm-granite/granite-4.0-h-micro` | $0.017 / M input tokens | $0.112 / M output tokens | かなり安価 |
+| `@cf/openai/whisper` | $0.0005 / audio minute | — | 音声認識 |
+| `@cf/moonshotai/kimi-k2.5` | $0.600 / M input tokens | $3.000 / M output tokens | 高性能寄り |
 
-**デプロイすると何が起きるか：**
+注意
+Anthropic や OpenAI などの外部モデルは、上の Workers AI の neuron 料金表にそのまま載らない場合があります。
+それらは Workers AI hosted model とは別の課金系統だからです。
 
-1. **URLが公開される**  
-   `https://cf-ai-handson.あなたのサブドメイン.workers.dev` が誰でもアクセス可能になる
+---
 
-2. **Neuronsが外部から消費される**  
-   公開されたURLに誰かがリクエストを送ると、**あなたのアカウントのNeuronsが消費される**
+## Claude について
 
-3. **無料枠10,000 Neurons/日を使い切るリスク**  
-   悪意あるアクセスや想定外の負荷で、すぐに上限に達してエラーになる
+Claude などの外部モデルは、Cloudflare 上から利用可能な場合があります。
+ただし、Workers AI の `@cf/...` 無料枠と同じ扱いではありません。
 
-4. **Workers Paidプランの場合は課金が発生する**  
-   超過分は$0.011/1,000 Neuronsで自動課金される
+したがって、
 
-### ✅ ローカルでの動作確認方法
+- Claude がダッシュボード上で Workers AI の neuron 表に見当たらない
+- だから無料
+
+と断定するのは避けた方が安全です。
+
+正確には、
+
+- `@cf/...` モデルは Workers AI hosted pricing
+- Claude など外部モデルは Unified Billing 側
+
+と分けて説明するのが適切です。
+
+---
+
+## このハンズオンではローカル確認を推奨
+
+このハンズオンでは、まず `wrangler dev` によるローカル確認を推奨します。
 
 ```bash
 npm run dev
-# → http://localhost:8787 でアクセス可能（外部非公開）
+# http://localhost:8787
 ```
 
-ローカルでも**CloudflareのGPUサーバーにリクエストが飛ぶ**ため、Neuronsは消費されます。  
-ただしURLは`localhost`なので外部からアクセスされる心配はありません。
+### デプロイを急がない理由
+
+- 公開 URL から外部アクセスを受ける可能性がある
+- その結果、想定外に AI リクエストが増える可能性がある
+- 無料枠や課金の管理が難しくなる
+
+そのため、最初は `localhost` での確認に限定する方が安全です。
 
 ---
 
-## 🛠️ セットアップ
+## セットアップ
 
 ### 必要なもの
 
 - Node.js 20以上
-- Cloudflareアカウント（無料）
-- Wrangler CLIのログイン済み状態
+- Cloudflareアカウント
+- Wrangler CLI のログイン済み状態
 
 ### 手順
 
@@ -132,29 +127,30 @@ cd cf-ai-handson
 # 2. 依存関係をインストール
 npm install
 
-# 3. Cloudflareにログイン（初回のみ）
+# 3. Cloudflareにログイン
 npx wrangler login
 
-# 4. ローカルサーバーを起動
+# 4. ローカルサーバー起動
 npm run dev
 ```
 
-ブラウザで http://localhost:8787 を開くと動作確認できます。
+ブラウザで `http://localhost:8787` を開くと確認できます。
 
 ---
 
-## 📡 APIエンドポイント一覧
+## APIエンドポイント一覧
 
 ### `GET /`
-ヘルスチェック。Workerが動いているか確認。
+
+ヘルスチェックです。
 
 ```bash
 curl http://localhost:8787/
-# → {"status":"ok","message":"Cloudflare Workers AI ハンズオン"}
 ```
 
 ### `POST /generate`
-テキスト生成。モデルを切り替えて比較できます。
+
+テキスト生成です。
 
 ```bash
 curl -X POST http://localhost:8787/generate \
@@ -165,78 +161,63 @@ curl -X POST http://localhost:8787/generate \
   }'
 ```
 
-**使えるモデル：**
+### 使えるモデル例
+
 | モデルID | 特徴 |
 |---|---|
-| `@cf/meta/llama-3.1-8b-instruct-fp8-fast` | バランス良し（デフォルト）|
+| `@cf/meta/llama-3.1-8b-instruct-fp8-fast` | バランス型 |
 | `@cf/meta/llama-3.2-3b-instruct` | 軽量・高速 |
-| `@cf/ibm-granite/granite-4.0-h-micro` | 最安 |
-| `@cf/qwen/qwen2.5-coder-32b-instruct` | コード生成特化 |
-| `anthropic/claude-opus-4.7` | 高性能（ベータ）|
-
-### OpenAI互換エンドポイント（おまけ）
-
-OpenAI SDKやVS Code Copilotと連携できます。
-
-```bash
-# モデル一覧
-curl http://localhost:8787/v1/models
-
-# チャット
-curl -X POST http://localhost:8787/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "@cf/meta/llama-3.1-8b-instruct-fp8-fast",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'
-```
+| `@cf/ibm-granite/granite-4.0-h-micro` | 安価 |
+| `@cf/qwen/qwen2.5-coder-32b-instruct` | コード生成向け |
+| `anthropic/claude-opus-4.7` | 外部モデル。課金系統に注意 |
 
 ---
 
-## 📊 Neurons消費量の確認方法
+## 利用量の確認
 
-ハンズオン中に自分がどれだけ使ったか確認できます。
+利用量は Cloudflare ダッシュボードから確認できます。
 
-1. [Cloudflareダッシュボード](https://dash.cloudflare.com) にログイン
-2. 左メニュー **「Workers AI」** をクリック
-3. **Analytics** タブで消費Neurons量を確認
+1. Cloudflare ダッシュボードにログイン
+2. Workers AI を開く
+3. Analytics で利用量を確認
 
-> 💡 **目安：** Llama 3.1 8Bで1回の質問（〜200トークン）あたり約10〜20 Neurons消費。  
-> 無料枠10,000 Neuronsで **数百回** は試せます。
+目安
+Hosted model では比較的少量の試行で済みますが、
+外部モデルは別課金系統の可能性があるため、最初は小さく試す方が安全です。
 
 ---
 
-## 🧱 プロジェクト構成
+## プロジェクト構成
 
-```
+```text
 cf-ai-handson/
 ├── src/
-│   └── index.ts      # Worker本体（APIエンドポイント）
+│   └── index.ts
 ├── public/
-│   └── index.html    # デモUI（モデル比較ページ）
-├── wrangler.toml     # Cloudflare設定
+│   └── index.html
+├── wrangler.toml
 ├── package.json
 └── tsconfig.json
 ```
 
 ---
 
-## ❓ よくあるトラブル
+## よくあるトラブル
 
-**Q. `wrangler dev` でエラーが出る**  
-→ `npx wrangler login` でCloudflareにログインしているか確認してください。
+Q. `wrangler dev` でエラーが出る
+A. `npx wrangler login` でログイン状態を確認してください。
 
-**Q. Error 4006 が返ってくる**  
-→ 1日の無料枠10,000 Neuronsを使い切っています。UTC 0:00（日本時間9:00）にリセットされます。
+Q. 無料枠を使い切ったようなエラーが出る
+A. Workers AI hosted model の無料枠を使い切っている可能性があります。リセットは UTC 0:00 です。
 
-**Q. Claudeモデルが使えない**  
-→ ベータ機能のため、アカウントによっては利用できない場合があります。まずLlamaモデルで試してください。
+Q. Claudeモデルが使えない
+A. アカウントや機能開放状況によっては使えない場合があります。まず `@cf/...` モデルで試してください。
 
-**Q. レスポンスが遅い**  
-→ 初回リクエストはコールドスタートで遅くなる場合があります。2回目以降は速くなります。
+Q. Claude は無料ですか？
+A. そうとは限りません。`@cf/...` モデルとは別の課金系統として考えてください。
 
 ---
 
-## 📝 ライセンス
+## ライセンス
 
 MIT
